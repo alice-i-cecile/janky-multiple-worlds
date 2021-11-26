@@ -1,9 +1,12 @@
+use analysis::{check_completion, report_simulation, CurrentSteps, MaxSteps};
 use bevy::prelude::*;
 use machinery::{AddSimulationExtension, Simulation, SimulationSteps};
 use simulation::CoinSimResults;
 
 fn main() {
     App::build()
+        // DefaultPlugins can be useful for running visualization from the main world
+        // but if you don't care, use the lower overhead of MinimalPlugins
         .add_plugins(DefaultPlugins)
         // Number of steps that each simulation will take before the main loop runs again
         .insert_resource(SimulationSteps(10))
@@ -20,7 +23,12 @@ fn main() {
         .add_simulation(Simulation::<3>::new(1.0, 400))
         // Systems added to your app will operate on the main world
         // This system is added to PostUpdate, as the simulations themselves are set to run in Update
-        .add_system_to_stage(CoreStage::PostUpdate, analysis::report_simulation.system())
+        .add_system_to_stage(CoreStage::PostUpdate, report_simulation.system())
+        // Exit when enough data has been collected
+        .init_resource::<CurrentSteps>()
+        // Maximum number of simulation steps
+        .insert_resource(MaxSteps(1000))
+        .add_system_to_stage(CoreStage::Last, check_completion.system())
         .run();
 }
 
@@ -41,7 +49,7 @@ mod machinery {
         pub schedule: Schedule,
     }
 
-    pub struct SimulationSteps(pub isize);
+    pub struct SimulationSteps(pub usize);
 
     fn run_simulation<const N: usize>(
         mut simulation: ResMut<Simulation<N>>,
@@ -208,19 +216,42 @@ mod simulation {
 
 /// Code that analyses or relies on our simulation results
 mod analysis {
+    use crate::machinery::SimulationSteps;
     use crate::simulation::CoinSimResults;
+    use bevy::app::AppExit;
     use bevy::prelude::*;
+
+    #[derive(Default)]
+    pub struct CurrentSteps(pub usize);
+
+    pub struct MaxSteps(pub usize);
 
     pub fn report_simulation(results: Res<Vec<CoinSimResults>>) {
         for coin_sim_results in results.iter() {
-            println!(
+            // Printing lines like this is pointlessly expensive;
+            // ideally write to a resource
+            // then save to a file at the end
+            info!(
                 "Coin trial with probability {} of heads",
                 coin_sim_results.p
             );
-            println!(
+            info!(
                 "{} heads out of {} tosses",
                 coin_sim_results.n_heads, coin_sim_results.n_tosses
             );
+        }
+    }
+
+    pub fn check_completion(
+        mut current_steps: ResMut<CurrentSteps>,
+        max_steps: Res<MaxSteps>,
+        steps_per_loop: Res<SimulationSteps>,
+        mut exit_events: EventWriter<AppExit>,
+    ) {
+        current_steps.0 += steps_per_loop.0;
+
+        if current_steps.0 >= max_steps.0 {
+            exit_events.send(AppExit);
         }
     }
 }
