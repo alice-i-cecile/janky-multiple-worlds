@@ -150,6 +150,7 @@ mod simulation {
             // Storing configuration in resources
             world.insert_resource(NTosses(n_tosses));
             // Cheap source of seeded entropy
+            // FIXME: does not seem to be reproducible
             world.insert_resource(SmallRng::seed_from_u64(42));
 
             // Storing data collection in a resource
